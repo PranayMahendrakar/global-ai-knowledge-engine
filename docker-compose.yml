@@ -1,0 +1,121 @@
+version: "3.9"
+
+services:
+  # ============================================
+  # Knowledge Engine - Core Pipeline
+  # ============================================
+  knowledge-engine:
+    build: .
+    container_name: knowledge-engine
+    command: python main.py --topics "artificial intelligence" "climate change" "technology"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MONGODB_URL=mongodb://mongodb:27017
+    depends_on:
+      - redis
+      - mongodb
+    restart: unless-stopped
+    networks:
+      - knowledge-net
+
+  # ============================================
+  # REST API Server
+  # ============================================
+  api:
+    build: .
+    container_name: knowledge-api
+    command: python main.py --api --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - knowledge-net
+
+  # ============================================
+  # Streamlit Dashboard
+  # ============================================
+  dashboard:
+    build: .
+    container_name: knowledge-dashboard
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
+    restart: unless-stopped
+    networks:
+      - knowledge-net
+
+  # ============================================
+  # Redis - Caching & Task Queue
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: knowledge-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - knowledge-net
+
+  # ============================================
+  # MongoDB - Article Storage
+  # ============================================
+  mongodb:
+    image: mongo:7
+    container_name: knowledge-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=knowledge_engine
+    restart: unless-stopped
+    networks:
+      - knowledge-net
+
+  # ============================================
+  # Neo4j - Production Graph Database (optional)
+  # ============================================
+  neo4j:
+    image: neo4j:5
+    container_name: knowledge-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    environment:
+      - NEO4J_AUTH=neo4j/password123
+      - NEO4J_PLUGINS=["apoc", "graph-data-science"]
+    restart: unless-stopped
+    networks:
+      - knowledge-net
+    profiles:
+      - production
+
+volumes:
+  redis-data:
+  mongo-data:
+  neo4j-data:
+  neo4j-logs:
+
+networks:
+  knowledge-net:
+    driver: bridge
